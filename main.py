@@ -148,7 +148,7 @@ def text_file_processing():
     empty = threading.Semaphore(10)  # Semaphore for empty slots
     data = threading.Semaphore(0)  # Semaphore for filled slots
 
-    def letter_add(c): # Not a process, but a function. May not actually work.
+    def letter_add(c): # Not a process, but a function.
         if c in letters_in_thread:
             i = 0
             while c != letters_in_thread[i]:
