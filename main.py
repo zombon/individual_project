@@ -1,5 +1,5 @@
 import threading
-from multiprocessing import Pipe, Process
+from multiprocessing import Pipe, Process, Queue
 import re
 import timeit
 import psutil
@@ -76,18 +76,29 @@ def task_manager():
             break
         else:
             print("No option selected.")
-def IPC_process(conn):
-    conn.send(["message"]) # Send a lot of messages, some should be long and others short
-    conn.close()
 
-def IPC_process_body():
-    parent_conn, child_conn = Pipe()
-    p = Process(target=IPC_process, args=(child_conn,))
-    p.start()
-    print(parent_conn.recv())
-    p.join()
 
-def IPC_thread():
+def IPC_process_shared():
+    queue = Queue()
+
+    def producer():
+        for i in range(5):
+            queue.put(i)
+
+    def consumer():
+        while not queue.empty():
+            item = queue.get()
+            print(item)
+
+    producerp = Process(target=producer, args=(queue,))
+    producerp.start()
+    consumerp = Process(target=consumer, args=(queue,))
+    consumerp.start()
+
+    producerp.join()
+    consumerp.join()
+
+def IPC_thread_shared():
     # Shared buffer
     buffer = []
 
@@ -145,7 +156,7 @@ def text_file_processing():
     list_of_strings = [] # Buffer for the threads
 
     mutex = threading.Semaphore(1)  # Mutex for buffer access
-    empty = threading.Semaphore(10)  # Semaphore for empty slots
+    empty = threading.Semaphore(10000)  # Semaphore for empty slots
     data = threading.Semaphore(0)  # Semaphore for filled slots
 
     def letter_add(c): # Not a process, but a function.
@@ -158,13 +169,12 @@ def text_file_processing():
             letters_in_thread.append(c)
             num_letters.append(1)
 
-    def reader_thread(): # Thread that will read the file
-        file = input("Put the full file directory here: ")
-        file = open(file, "r")
-        big_string = file.read()
+    def reader_thread(file): # Thread that will read the file
+        big_string = file
         i = 0
         while len(big_string) > (i * 50):
-            if len(big_string) >= 50:
+            snippet = len(big_string) - (i * 50)
+            if snippet >= 50:
                 empty.acquire()  # Wait for an empty slot
                 mutex.acquire()  # Get exclusive access to the buffer
                 list_of_strings.append(big_string[(0 + 50 * i):(50 + 50 * i)])  # Add item to the buffer
@@ -175,6 +185,7 @@ def text_file_processing():
                 empty.acquire()  # Wait for an empty slot
                 mutex.acquire()  # Get exclusive access to the buffer
                 list_of_strings.append(big_string[(0 + 50 * i):])  # Add item to the buffer
+                i+=1
                 mutex.release()  # Release the mutex
                 data.release()  # Notify that a slot is filled
 
@@ -187,9 +198,15 @@ def text_file_processing():
 
     consumers = [threading.Thread(target=consumer_thread) for _ in range(2)]
 
-    reader = threading.Thread(target=reader_thread)
+    file = input("Put the full file directory here: ")
+    time_taken = timeit.default_timer()
+    file = open(file, "r")
+    file = file.readlines()
+    file = ''.join(file).replace('\n', '')
+    reader = threading.Thread(target=reader_thread, args=(file,))
     reader.start()
-    reader.join() # Unfortunately, I was not able to get something to work in time. I blame my absurdly late start. That's something I did to myself.
+    reader.join()
+    print("Reader has finished")
     for consumer_thread in consumers:
         consumer_thread.start()
 
@@ -203,19 +220,26 @@ def text_file_processing():
         count += num_letters[i]
         i+=1
     print("There were " + str(count) + " characters in the file.")
+    time_taken_2 = timeit.default_timer()
+    print("Total execution time: " + str(time_taken_2 - time_taken) + " seconds")
+    print("CPU usage: " + str(psutil.cpu_percent()) + "%")
+    print("Memory usage: " + str(psutil.virtual_memory()) + "%")
 
 def main_menu():
     while True:
         choice = input("What mode do you want to use?\n1. Process task manager\n2. IPC Comparison\n3. Text file processor\n4. Exit program ")
-        if choice == 1:
+        if choice == "1":
             task_manager()
-        elif choice == 2:
-            IPC_process_body()
-            IPC_thread()
-            print("The feature is not fully completed, unfortunately.")
-        elif choice == 3:
+        elif choice == "2":
+            # IPC_process_shared()
+            IPC_thread_shared()
+            print("The feature is not fully completed.")
+            print("Due to problems with the multiprocessing module, this feature is unfortunately canceled.")
+        elif choice == "3":
             text_file_processing()
-        elif choice == 4:
+        elif choice == "4":
             break
         else:
             print("Not a valid command, try again.")
+
+main_menu()
